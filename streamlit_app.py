@@ -18,7 +18,7 @@ def get_delta_strike(price, iv, delta, option_type='call'):
 st.title("🚀 SPY 0DTE Maestro")
 
 # Entrada de Saldo en la barra lateral o principal
-saldo = st.number_input("Introduce tu saldo actual (€):", value=28630.0, step=100.0)
+saldo = st.number_input("Introduce tu saldo actual (€):", value=25000.0, step=100.0)
 
 if st.button('Ejecutar Análisis 16:15'):
     tz_ny = pytz.timezone('America/New_York')
@@ -102,4 +102,5 @@ if st.button('Ejecutar Análisis 16:15'):
 
         except Exception as e:
             st.error(f"Error: {e}. El mercado podría estar cerrado.")
+
 
