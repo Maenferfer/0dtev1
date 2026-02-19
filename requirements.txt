@@ -1,7 +1,7 @@
 streamlit
-yfinance --upgrade
+yfinance
 pandas
 numpy
 scipy
 pytz
-
+requests
