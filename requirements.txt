@@ -1,7 +1,7 @@
-streamlit==1.31.1
-yfinance==0.2.36
-pandas==2.2.0
-numpy==1.26.4
-scipy==1.12.0
+streamlit
+yfinance --upgrade
+pandas
+numpy
+scipy
 pytz
-altair==5.2.0
+
