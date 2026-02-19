@@ -5,16 +5,16 @@ import numpy as np
 from scipy.stats import norm
 from datetime import datetime
 import pytz
-import requests
+# Ya no necesitamos import requests para la sesión
 
-# Configuración de página para móvil
+# --- CONFIGURACIÓN ---
 st.set_page_config(page_title="SPY 0DTE Maestro", page_icon="📈")
 
 def get_delta_strike(price, iv, delta, option_type='call'):
     """Calcula el strike aproximado basado en el delta deseado."""
     t = 0.7 / 365 
     sigma = iv / 100
-    if sigma <= 0 or np.isnan(sigma): sigma = 0.15 # Valor por defecto si falla la IV
+    if sigma <= 0 or np.isnan(sigma): sigma = 0.15
     
     z = norm.ppf(delta if option_type == 'call' else 1 - abs(delta))
     if option_type == 'call':
@@ -24,7 +24,6 @@ def get_delta_strike(price, iv, delta, option_type='call'):
 
 st.title("🚀 SPY 0DTE Maestro")
 
-# Entrada de Saldo
 saldo = st.number_input("Introduce tu saldo actual (€):", value=28630.0, step=100.0)
 
 if st.button('Ejecutar Análisis 2026'):
@@ -39,29 +38,25 @@ if st.button('Ejecutar Análisis 2026'):
     
     with st.spinner('Conectando con Yahoo Finance...'):
         try:
-            # SOLUCIÓN AL BLOQUEO: Sesión con User-Agent de navegador real
-            session = requests.Session()
-            session.headers.update({
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
-            })
-
+            # SOLUCIÓN: Eliminamos la sesión manual de requests. 
+            # yfinance v0.2.61+ usa curl_cffi automáticamente.
+            
             data = yf.download(
                 tickers=tickers, 
                 period="2d", 
                 interval="1m", 
-                progress=False,
-                session=session
+                progress=False
+                # session=session  <-- ESTO SE ELIMINA
             )
             
             if data.empty:
-                st.error("No se recibieron datos. Es posible que el mercado esté cerrado o la API esté limitada.")
+                st.error("No se recibieron datos. Es posible que el mercado esté cerrado.")
                 st.stop()
 
-            # Extraer precios de cierre (Close) manejando el MultiIndex de columnas
-            # Usamos .xs para obtener una columna limpia para cada ticker
             df_close = data['Close']
 
             def get_last(ticker):
+                if ticker not in df_close.columns: return None
                 val = df_close[ticker].dropna()
                 return float(val.iloc[-1]) if not val.empty else None
 
@@ -72,7 +67,6 @@ if st.button('Ejecutar Análisis 2026'):
             skew = get_last('^SKEW')
             trin = get_last('^TRIN') or 1.0
             
-            # Obtener el Open de SPY de hoy (primer registro de la última sesión)
             spy_data = df_close['SPY'].dropna()
             op = float(spy_data.iloc[0]) if not spy_data.empty else lp
 
@@ -80,25 +74,24 @@ if st.button('Ejecutar Análisis 2026'):
                 st.error("Error: Faltan datos críticos de SPY o VIX1D.")
                 st.stop()
 
-            # Cálculo de Riesgo y Bias
-            vix_ratio = vix1d / vix if vix else 1
+            # --- LÓGICA DE RIESGO ---
+            vix_ratio = vix1d / vix if (vix and vix > 0) else 1
             risk_score = 0
             if vix_ratio > 1.10: risk_score += 40
-            if vvix > 115: risk_score += 30
-            if skew > 145: risk_score += 15
+            if vvix and vvix > 115: risk_score += 30
+            if skew and skew > 145: risk_score += 15
             if abs(lp - op) / op > 0.008: risk_score += 15 
 
             bias = "NEUTRAL"
             if lp > op * 1.004 and trin < 0.85: bias = "ALCISTA"
             elif lp < op * 0.996 and trin > 1.15: bias = "BAJISTA"
 
-            # Configuración de Estrategia
+            # --- ESTRATEGIA ---
             wing_width = 5 if vix1d > 18 else 2
             target_profit = saldo * 0.005
             riesgo_max = saldo * 0.02
             num_contratos = int(riesgo_max / (wing_width * 100))
 
-            # Definición de Niveles Operativos
             if risk_score >= 75 and bias != "NEUTRAL":
                 combo = f"VERTICAL DEBIT SPREAD ({bias})"
                 s_c = round(get_delta_strike(lp, vix1d, 0.70, 'call' if bias == 'ALCISTA' else 'put'))
@@ -115,7 +108,7 @@ if st.button('Ejecutar Análisis 2026'):
                 s_c = round(max(lp * 1.01, get_delta_strike(lp, vix1d, 0.10, 'call')))
                 s_p = round(min(lp * 0.99, get_delta_strike(lp, vix1d, 0.10, 'put')))
 
-            # Interfaz de resultados
+            # --- INTERFAZ ---
             st.divider()
             st.metric("PRECIO SPY", f"{lp:.2f}", f"{((lp-op)/op)*100:.2f}%")
             
@@ -129,10 +122,8 @@ if st.button('Ejecutar Análisis 2026'):
             if s_c != 0 or s_p != 0:
                 st.info(f"**Lotes sugeridos:** {max(1, num_contratos)} | **Objetivo:** +{target_profit:.2f}€")
                 if "DEBIT" in combo:
-                    # Lógica para Debit Spreads
                     st.success(f"✅ COMPRAR: {s_c} | VENDER: {s_c+2 if bias=='ALCISTA' else s_c-2}")
                 else:
-                    # Lógica para Credit Spreads / Iron Condor
                     if s_c != 0: st.warning(f"CALL: Sell {s_c} / Buy {s_c + wing_width}")
                     if s_p != 0: st.warning(f"PUT: Sell {s_p} / Buy {s_p - wing_width}")
             else:
@@ -140,4 +131,3 @@ if st.button('Ejecutar Análisis 2026'):
 
         except Exception as e:
             st.error(f"Se produjo un error: {str(e)}")
-            st.info("Sugerencia: Asegúrate de que el mercado esté abierto (15:30 - 22:00 hora España).")
