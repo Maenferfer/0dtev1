@@ -5,3 +5,4 @@ numpy
 scipy
 pytz
 requests
+curl_cffi
